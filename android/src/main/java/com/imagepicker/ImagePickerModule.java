@@ -136,7 +136,9 @@ public class ImagePickerModule extends ReactContextBaseJavaModule
     this.dialogThemeId = dialogThemeId;
     this.reactContext = reactContext;
     this.reactContext.addActivityEventListener(this);
-    this.contentsCache = new ContentsCache(reactContext, 10);
+    this.contentsCache = new ContentsCache(reactContext,
+            "react-native-image-picker",
+            10);
   }
 
   @Override

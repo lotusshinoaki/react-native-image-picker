@@ -26,14 +26,14 @@ import java.util.UUID;
  * file scheme access.
  * */
 public class ContentsCache {
-    private static final String TAG = "ContentCache";
+    private static final String TAG = "ContentsCache";
     private final File mCacheDir;
     private final LinkedList<File> mCachedList = new LinkedList<>();
     private final ContentResolver mContentResolver;
     private final int mMaxNumOfCaches;
 
-    public ContentsCache(@NonNull Context context, int maxNumOfCaches) {
-        mCacheDir = new File(context.getCacheDir(), TAG);
+    public ContentsCache(@NonNull Context context, @NonNull String cacheDirName, int maxNumOfCaches) {
+        mCacheDir = new File(context.getCacheDir(), cacheDirName);
         mContentResolver = context.getContentResolver();
         mMaxNumOfCaches = Math.max(maxNumOfCaches, 1);
 
