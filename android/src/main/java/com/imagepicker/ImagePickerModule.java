@@ -3,6 +3,7 @@ package com.imagepicker;
 import android.Manifest;
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
+import android.content.ContentValues;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
@@ -19,6 +20,7 @@ import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AlertDialog;
 import android.text.TextUtils;
 import android.util.Base64;
+import android.util.Log;
 import android.util.Patterns;
 import android.webkit.MimeTypeMap;
 import android.content.pm.PackageManager;
@@ -37,6 +39,8 @@ import com.imagepicker.utils.MediaUtils.ReadExifResult;
 import com.imagepicker.utils.RealPathUtil;
 import com.imagepicker.utils.UI;
 
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
@@ -47,6 +51,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.ref.WeakReference;
 import java.util.List;
+import java.util.UUID;
 
 import com.facebook.react.modules.core.PermissionListener;
 import com.facebook.react.modules.core.PermissionAwareActivity;
@@ -68,6 +73,7 @@ public class ImagePickerModule extends ReactContextBaseJavaModule
 
   private final ReactApplicationContext reactContext;
   private final int dialogThemeId;
+  private final ContentsCache contentsCache;
 
   protected Callback callback;
   private ReadableMap options;
@@ -130,6 +136,7 @@ public class ImagePickerModule extends ReactContextBaseJavaModule
     this.dialogThemeId = dialogThemeId;
     this.reactContext = reactContext;
     this.reactContext.addActivityEventListener(this);
+    this.contentsCache = new ContentsCache(reactContext, 10);
   }
 
   @Override
@@ -254,15 +261,22 @@ public class ImagePickerModule extends ReactContextBaseJavaModule
     {
       requestCode = REQUEST_LAUNCH_IMAGE_CAPTURE;
       cameraIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+      if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.O) {
+        final File original = createNewFile(reactContext, this.options, false);
+        imageConfig = imageConfig.withOriginalFile(original);
 
-      final File original = createNewFile(reactContext, this.options, false);
-      imageConfig = imageConfig.withOriginalFile(original);
-
-      if (imageConfig.original != null) {
-        cameraCaptureURI = RealPathUtil.compatUriFromFile(reactContext, imageConfig.original);
-      }else {
-        responseHelper.invokeError(callback, "Couldn't get file path for photo");
-        return;
+        if (imageConfig.original != null) {
+          cameraCaptureURI = RealPathUtil.compatUriFromFile(reactContext, imageConfig.original);
+        }else {
+          responseHelper.invokeError(callback, "Couldn't get file path for photo");
+          return;
+        }
+      } else {
+        ContentValues values = new ContentValues();
+        values.put(MediaStore.Images.Media.TITLE, UUID.randomUUID().toString());
+        values.put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
+        cameraCaptureURI = getContext().getContentResolver().
+                insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
       }
       if (cameraCaptureURI == null)
       {
@@ -335,8 +349,14 @@ public class ImagePickerModule extends ReactContextBaseJavaModule
     else
     {
       requestCode = REQUEST_LAUNCH_IMAGE_LIBRARY;
-      libraryIntent = new Intent(Intent.ACTION_PICK,
-      MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
+      if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.O) {
+        libraryIntent = new Intent(Intent.ACTION_PICK,
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
+      } else {
+        libraryIntent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        libraryIntent.addCategory(Intent.CATEGORY_OPENABLE);
+        libraryIntent.setType("image/jpeg");
+      }
     }
 
     if (libraryIntent.resolveActivity(reactContext.getPackageManager()) == null)
@@ -380,10 +400,18 @@ public class ImagePickerModule extends ReactContextBaseJavaModule
     {
       case REQUEST_LAUNCH_IMAGE_CAPTURE:
         uri = cameraCaptureURI;
+        if ((uri != null) && "content".equals(uri.getScheme())) {
+          uri = contentsCache.add(uri);
+          imageConfig = imageConfig.withOriginalFile(new File(getRealPathFromURI(uri)));
+        }
         break;
 
       case REQUEST_LAUNCH_IMAGE_LIBRARY:
         uri = data.getData();
+        if ((uri != null) && "content".equals(uri.getScheme())) {
+          uri = contentsCache.add(uri);
+        }
+
         String realPath = getRealPathFromURI(uri);
         final boolean isUrl = !TextUtils.isEmpty(realPath) &&
                 Patterns.WEB_URL.matcher(realPath).matches();
