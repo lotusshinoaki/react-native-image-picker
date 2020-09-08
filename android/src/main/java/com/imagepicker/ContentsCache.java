@@ -10,6 +10,7 @@ import android.util.Log;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -32,7 +33,9 @@ public class ContentsCache {
     private final ContentResolver mContentResolver;
     private final int mMaxNumOfCaches;
 
-    public ContentsCache(@NonNull Context context, @NonNull String cacheDirName, int maxNumOfCaches) {
+    public ContentsCache(@NonNull Context context,
+                         @NonNull String cacheDirName,
+                         int maxNumOfCaches) {
         mCacheDir = new File(context.getCacheDir(), cacheDirName);
         mContentResolver = context.getContentResolver();
         mMaxNumOfCaches = Math.max(maxNumOfCaches, 1);
@@ -43,13 +46,10 @@ public class ContentsCache {
     }
 
     @NonNull
-    public Uri add(@NonNull Uri uri) {
+    public File add(@NonNull Uri uri) throws IOException {
         File cachedFile = addToCachedFile(uri);
-        if (cachedFile == null) {
-            return uri;
-        }
         addToCachedFileList(cachedFile);
-        return Uri.fromFile(cachedFile);
+        return cachedFile;
     }
 
     private void addToCachedFileList(@NonNull File cacheFile) {
@@ -61,8 +61,8 @@ public class ContentsCache {
         mCachedList.addFirst(cacheFile);
     }
 
-    @Nullable
-    private File addToCachedFile(@NonNull Uri uri) {
+    @NonNull
+    private File addToCachedFile(@NonNull Uri uri) throws IOException {
         if (!"content".equals(uri.getScheme())) {
             throw new IllegalArgumentException("URI scheme must be \"content\"");
         }
@@ -76,20 +76,18 @@ public class ContentsCache {
         OutputStream output = null;
         try {
             input = mContentResolver.openInputStream(uri);
-            if (input != null) {
-                input = new BufferedInputStream(input);
-                File cacheFile = new File(mCacheDir, UUID.randomUUID().toString());
-                output = new BufferedOutputStream(new FileOutputStream(cacheFile));
-                copyTo(input, output);
-                return cacheFile;
+            if (input == null) {
+                throw new FileNotFoundException(uri.toString());
             }
-        } catch (IOException e) {
-            Log.w(TAG, e);
+            input = new BufferedInputStream(input);
+            File cacheFile = new File(mCacheDir, UUID.randomUUID().toString());
+            output = new BufferedOutputStream(new FileOutputStream(cacheFile));
+            copyTo(input, output);
+            return cacheFile;
         } finally {
             closeQuietly(input);
             closeQuietly(output);
         }
-        return null;
     }
 
     @NonNull

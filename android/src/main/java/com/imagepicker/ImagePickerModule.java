@@ -280,6 +280,7 @@ public class ImagePickerModule extends ReactContextBaseJavaModule
         cameraCaptureURI = getContext().getContentResolver().
                 insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
       }
+
       if (cameraCaptureURI == null)
       {
         responseHelper.invokeError(callback, "Couldn't get file path for photo");
@@ -403,18 +404,33 @@ public class ImagePickerModule extends ReactContextBaseJavaModule
       case REQUEST_LAUNCH_IMAGE_CAPTURE:
         uri = cameraCaptureURI;
         if ((uri != null) && "content".equals(uri.getScheme())) {
-          uri = contentsCache.add(uri);
-          imageConfig = imageConfig.withOriginalFile(new File(getRealPathFromURI(uri)));
+          try {
+            imageConfig = imageConfig.withOriginalFile(contentsCache.add(uri));
+          } catch (IOException e) {
+            // image could not add to cache
+            responseHelper.putString("error", "Could not read captured image");
+            responseHelper.putString("uri", uri.toString());
+            responseHelper.invokeResponse(callback);
+            callback = null;
+            return;
+          }
         }
         break;
 
       case REQUEST_LAUNCH_IMAGE_LIBRARY:
         uri = data.getData();
+        String realPath = null;
         if ((uri != null) && "content".equals(uri.getScheme())) {
-          uri = contentsCache.add(uri);
+          try {
+            realPath = contentsCache.add(uri).getPath();
+          } catch (IOException ignore) {
+          }
         }
 
-        String realPath = getRealPathFromURI(uri);
+        if ((uri != null) && (realPath == null)) {
+          realPath = getRealPathFromURI(uri);
+        }
+
         final boolean isUrl = !TextUtils.isEmpty(realPath) &&
                 Patterns.WEB_URL.matcher(realPath).matches();
         if (realPath == null || isUrl)
